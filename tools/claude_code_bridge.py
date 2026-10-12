@@ -836,7 +836,7 @@ class HookHandler(BaseHTTPRequestHandler):
 
         req_id = str(payload.get("request_id", "")).strip()
         decision_in = str(payload.get("decision", "")).strip().lower()
-        if not req_id or decision_in not in ("allow", "once", "deny"):
+        if not req_id or decision_in not in ("allow", "deny"):
             return self._reply(400, {"ok": False, "error": "decision must be allow|deny"})
         decision = "once" if decision_in == "allow" else decision_in
 

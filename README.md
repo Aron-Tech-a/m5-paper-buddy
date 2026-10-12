@@ -156,11 +156,11 @@ BUDDY_REMOTE_SECRET='change-this-secret' \
 仓库附带了最小验证脚本：
 
 ```bash
-python3 /home/runner/work/m5-paper-buddy/m5-paper-buddy/tools/remote_approval_client.py \
+python3 tools/remote_approval_client.py \
   --base-url http://127.0.0.1:9876 \
   --secret 'change-this-secret' pending
 
-python3 /home/runner/work/m5-paper-buddy/m5-paper-buddy/tools/remote_approval_client.py \
+python3 tools/remote_approval_client.py \
   --base-url http://127.0.0.1:9876 \
   --secret 'change-this-secret' decision --decision allow
 ```

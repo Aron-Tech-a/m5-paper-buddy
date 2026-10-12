@@ -166,11 +166,11 @@ Remote calls must include HMAC-SHA256 auth headers (auth + anti-replay):
 Minimal verification client:
 
 ```bash
-python3 /home/runner/work/m5-paper-buddy/m5-paper-buddy/tools/remote_approval_client.py \
+python3 tools/remote_approval_client.py \
   --base-url http://127.0.0.1:9876 \
   --secret 'change-this-secret' pending
 
-python3 /home/runner/work/m5-paper-buddy/m5-paper-buddy/tools/remote_approval_client.py \
+python3 tools/remote_approval_client.py \
   --base-url http://127.0.0.1:9876 \
   --secret 'change-this-secret' decision --decision allow
 ```
