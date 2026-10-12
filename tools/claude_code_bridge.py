@@ -80,6 +80,7 @@ REMOTE_TTL_SEC      = 30
 NONCE_WINDOW_SEC    = 300
 # Access under STATE_LOCK only.
 NONCE_SEEN          = {}
+ALLOW_LAN_HOOKS     = False
 
 
 def log(*a, **kw):
@@ -748,6 +749,10 @@ class HookHandler(BaseHTTPRequestHandler):
             return self._remote_decision()
         if self.path != "/hook":
             return self._reply(404, {"error": "not found"})
+        if not ALLOW_LAN_HOOKS:
+            peer = self.client_address[0]
+            if peer not in ("127.0.0.1", "::1"):
+                return self._reply(403, {"error": "hook endpoint is localhost-only"})
 
         try:
             n = int(self.headers.get("Content-Length") or "0")
@@ -1034,7 +1039,7 @@ def pick_transport(kind: str) -> Transport:
 
 
 def main():
-    global BUDGET_LIMIT, TRANSPORT, REMOTE_SECRET, REMOTE_TTL_SEC
+    global BUDGET_LIMIT, TRANSPORT, REMOTE_SECRET, REMOTE_TTL_SEC, ALLOW_LAN_HOOKS
 
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", help="explicit serial port (implies --transport serial)")
@@ -1054,6 +1059,7 @@ def main():
     BUDGET_LIMIT = max(0, args.budget)
     REMOTE_SECRET = os.environ.get("BUDDY_REMOTE_SECRET", "")
     REMOTE_TTL_SEC = max(5, args.remote_ttl)
+    ALLOW_LAN_HOOKS = os.environ.get("BUDDY_ALLOW_LAN_HOOKS", "").lower() in ("1", "true", "yes")
 
     if args.port:
         TRANSPORT = SerialTransport(args.port)
@@ -1080,6 +1086,8 @@ def main():
         log("[remote] relay disabled (set BUDDY_REMOTE_SECRET to enable)")
         if args.http_host != "127.0.0.1":
             log("[remote] WARNING: daemon is LAN-bound but remote relay auth is disabled")
+    if args.http_host != "127.0.0.1" and not ALLOW_LAN_HOOKS:
+        log("[http] hook endpoint still restricted to localhost clients; set BUDDY_ALLOW_LAN_HOOKS=1 to override")
     log("[ready] start a Claude Code session with the hooks installed")
     try:
         srv.serve_forever()

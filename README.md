@@ -146,6 +146,8 @@ BUDDY_REMOTE_SECRET='change-this-secret' \
 /buddy-start
 ```
 
+> 默认只开放远程审批 relay；`/hook` 仍限制本机访问。若你明确要暴露 `/hook`，再额外设置 `BUDDY_ALLOW_LAN_HOOKS=1`。
+
 客户端请求需要 HMAC-SHA256 头（防伪造 / 防重放）：
 
 - `X-Buddy-Device`
