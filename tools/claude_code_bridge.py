@@ -78,6 +78,7 @@ BUMP_EVENT          = threading.Event()
 REMOTE_SECRET       = ""
 REMOTE_TTL_SEC      = 30
 NONCE_WINDOW_SEC    = 300
+# Access under STATE_LOCK only.
 NONCE_SEEN          = {}
 
 
@@ -1041,7 +1042,7 @@ def main():
                     help="context-window limit for the budget bar (default 200K = "
                          "Claude 4.6 standard context; set 1000000 for 1M-context "
                          "beta; set 0 to hide the bar)")
-    ap.add_argument("--remote-ttl", type=int, default=30,
+    ap.add_argument("--remote-ttl", type=int, default=int(os.environ.get("BUDDY_REMOTE_TTL", "30")),
                     help="remote approval expiry window in seconds (default 30)")
     args = ap.parse_args()
 
