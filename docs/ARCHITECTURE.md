@@ -122,6 +122,36 @@ Daemon 每次连上 device（serial 打开或 BLE 订阅成功）就发：
 
 Device 会 ack 第一个 `owner`，写到 NVS 里当 pet name 展示用。
 
+### 2.5 WiFi 阶段远程审批 relay（PoC）
+
+第一阶段不动现有 serial/BLE 主链路，只在 daemon 侧开放远程审批接口：
+
+- `GET /remote/v1/pending`：拉取当前 **FIFO 队首**审批（没有则 `request=null`）
+- `POST /remote/v1/decision`：提交 `allow/deny`
+
+请求摘要字段（最小集）：
+
+```jsonc
+{
+  "request_id": "req_1776498646197",
+  "session_id": "a1b2c3d4-xxx-refactor",
+  "project": "m5-paper-buddy",
+  "tool": "Bash",
+  "hint": "npm test",
+  "summary": "$ npm test ...",
+  "expires_at": 1776498676,
+  "ttl_sec": 27
+}
+```
+
+安全（PoC 已实现）：
+
+- 共享密钥 `BUDDY_REMOTE_SECRET`
+- HMAC-SHA256 头签名：`device + timestamp + nonce + body`
+- 时间窗校验（防重放）
+- nonce 去重（防重放）
+- 仅允许审批当前 FIFO 队首（不破坏原队列语义）
+
 ---
 
 ## 3. Daemon 内部

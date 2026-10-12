@@ -128,6 +128,45 @@ BLE 首次连接会触发 macOS 系统配对对话框，Paper 屏幕上显示 6 
 
 ---
 
+## 📡 WiFi 远程审批 PoC（第一阶段）
+
+这个阶段只做“远程审批闭环”，不改现有 USB/BLE 本地链路：
+
+- `Claude hooks -> daemon` 流程不变
+- 新增 daemon 远程 relay API：
+  - `GET /remote/v1/pending`：拉取当前 FIFO 队首审批
+  - `POST /remote/v1/decision`：回传 `allow/deny`
+- 本地 Paper 仍可审批（作为回退）
+
+启动示例（允许局域网访问）：
+
+```bash
+BUDDY_HTTP_HOST=0.0.0.0 \
+BUDDY_REMOTE_SECRET='change-this-secret' \
+/buddy-start
+```
+
+客户端请求需要 HMAC-SHA256 头（防伪造 / 防重放）：
+
+- `X-Buddy-Device`
+- `X-Buddy-Timestamp`
+- `X-Buddy-Nonce`
+- `X-Buddy-Signature`
+
+仓库附带了最小验证脚本：
+
+```bash
+python3 /home/runner/work/m5-paper-buddy/m5-paper-buddy/tools/remote_approval_client.py \
+  --base-url http://127.0.0.1:9876 \
+  --secret 'change-this-secret' pending
+
+python3 /home/runner/work/m5-paper-buddy/m5-paper-buddy/tools/remote_approval_client.py \
+  --base-url http://127.0.0.1:9876 \
+  --secret 'change-this-secret' decision --decision allow
+```
+
+---
+
 ## 💰 上下文预算
 
 屏幕上的进度条显示 **当前 focus 的 session 的上下文窗口占用量** ÷ 上限，读取自 session transcript JSONL 里最后一条 assistant 消息的 `usage.input_tokens + output_tokens`。

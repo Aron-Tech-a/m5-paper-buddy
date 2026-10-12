@@ -34,6 +34,8 @@ Usage:
 import argparse
 import asyncio
 import glob
+import hashlib
+import hmac
 import json
 import os
 import subprocess
@@ -42,7 +44,7 @@ import threading
 import time
 from collections import deque
 from datetime import datetime
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 # Nordic UART Service UUIDs — match the firmware's ble_bridge.cpp.
 NUS_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
@@ -73,6 +75,10 @@ SESSION_ASSISTANT   = {}                # sid -> latest assistant text (per-sess
 FOCUSED_SID         = None              # user-picked focused session (for dashboard)
 TRANSPORT           = None
 BUMP_EVENT          = threading.Event()
+REMOTE_SECRET       = ""
+REMOTE_TTL_SEC      = 30
+NONCE_WINDOW_SEC    = 300
+NONCE_SEEN          = {}
 
 
 def log(*a, **kw):
@@ -86,6 +92,54 @@ def now_hm():
 def add_transcript(line: str):
     with STATE_LOCK:
         TRANSCRIPT.appendleft(f"{now_hm()} {line[:80]}")
+
+
+def _prune_nonces(now_ts: int):
+    stale = [k for k, seen_at in NONCE_SEEN.items() if now_ts - seen_at > NONCE_WINDOW_SEC]
+    for k in stale:
+        NONCE_SEEN.pop(k, None)
+
+
+def verify_remote_auth(method: str, path: str, body: str, headers):
+    if not REMOTE_SECRET:
+        return False, "remote relay disabled"
+
+    dev = (headers.get("X-Buddy-Device") or "").strip()
+    ts_raw = (headers.get("X-Buddy-Timestamp") or "").strip()
+    nonce = (headers.get("X-Buddy-Nonce") or "").strip()
+    sig = (headers.get("X-Buddy-Signature") or "").strip().lower()
+    if not (dev and ts_raw and nonce and sig):
+        return False, "missing auth headers"
+
+    try:
+        ts = int(ts_raw)
+    except ValueError:
+        return False, "bad timestamp"
+
+    now_ts = int(time.time())
+    if abs(now_ts - ts) > 120:
+        return False, "timestamp skew too large"
+
+    if len(nonce) > 96:
+        return False, "nonce too long"
+
+    body = body or ""
+    base = f"{method}\n{path}\n{dev}\n{ts}\n{nonce}\n{body}"
+    expected = hmac.new(
+        REMOTE_SECRET.encode("utf-8"),
+        base.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    if not hmac.compare_digest(expected, sig):
+        return False, "bad signature"
+
+    nonce_key = f"{dev}:{nonce}"
+    with STATE_LOCK:
+        _prune_nonces(now_ts)
+        if nonce_key in NONCE_SEEN:
+            return False, "nonce replay"
+        NONCE_SEEN[nonce_key] = now_ts
+    return True, dev
 
 
 # -----------------------------------------------------------------------------
@@ -659,7 +713,41 @@ def extract_last_assistant(path: str) -> str:
 class HookHandler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args): pass
 
+    def do_GET(self):
+        if self.path != "/remote/v1/pending":
+            return self._reply(404, {"error": "not found"})
+        ok, auth_info = verify_remote_auth("GET", self.path, "", self.headers)
+        if not ok:
+            return self._reply(401, {"ok": False, "error": auth_info})
+
+        now_ts = int(time.time())
+        with STATE_LOCK:
+            p = ACTIVE_PROMPT.copy() if ACTIVE_PROMPT else None
+            sid = p.get("session_id", "") if p else ""
+            meta = SESSION_META.get(sid) if sid else None
+        req = None
+        if p:
+            created = int(p.get("created_at", now_ts))
+            expires = created + max(1, REMOTE_TTL_SEC)
+            remaining = max(0, expires - now_ts)
+            req = {
+                "request_id": p.get("id", ""),
+                "session_id": sid,
+                "project": (meta or {}).get("project", ""),
+                "tool": p.get("tool", ""),
+                "hint": p.get("hint", ""),
+                "summary": p.get("body", "")[:240],
+                "expires_at": expires,
+                "ttl_sec": remaining,
+            }
+        return self._reply(200, {"ok": True, "request": req})
+
     def do_POST(self):
+        if self.path == "/remote/v1/decision":
+            return self._remote_decision()
+        if self.path != "/hook":
+            return self._reply(404, {"error": "not found"})
+
         try:
             n = int(self.headers.get("Content-Length") or "0")
             body = self.rfile.read(n) if n > 0 else b""
@@ -728,6 +816,49 @@ class HookHandler(BaseHTTPRequestHandler):
         self.end_headers()
         try: self.wfile.write(body)
         except BrokenPipeError: pass
+
+    def _remote_decision(self):
+        try:
+            n = int(self.headers.get("Content-Length") or "0")
+            raw = self.rfile.read(n) if n > 0 else b""
+            body = raw.decode("utf-8") if raw else ""
+        except Exception as e:
+            return self._reply(400, {"ok": False, "error": str(e)})
+
+        ok, auth_info = verify_remote_auth("POST", self.path, body, self.headers)
+        if not ok:
+            return self._reply(401, {"ok": False, "error": auth_info})
+
+        try:
+            payload = json.loads(body) if body else {}
+        except json.JSONDecodeError:
+            return self._reply(400, {"ok": False, "error": "invalid json"})
+
+        req_id = str(payload.get("request_id", "")).strip()
+        decision_in = str(payload.get("decision", "")).strip().lower()
+        if not req_id or decision_in not in ("allow", "once", "deny"):
+            return self._reply(400, {"ok": False, "error": "decision must be allow|deny"})
+        decision = "once" if decision_in == "allow" else decision_in
+
+        now_ts = int(time.time())
+        with STATE_LOCK:
+            active_id = (ACTIVE_PROMPT or {}).get("id", "")
+            active_created = int((ACTIVE_PROMPT or {}).get("created_at", now_ts))
+            holder = PENDING.get(req_id)
+            is_pending = req_id in PENDING_PROMPTS
+
+        if not is_pending or not holder:
+            return self._reply(409, {"ok": False, "error": "request no longer pending"})
+        if req_id != active_id:
+            return self._reply(409, {"ok": False, "error": "request is not active fifo head"})
+        if now_ts > active_created + max(1, REMOTE_TTL_SEC):
+            return self._reply(409, {"ok": False, "error": "request expired"})
+
+        holder["decision"] = decision
+        holder["event"].set()
+        add_transcript(f"remote {decision}")
+        BUMP_EVENT.set()
+        return self._reply(200, {"ok": True, "request_id": req_id, "decision": decision})
 
     def _session_start(self, p):
         sid = p.get("session_id", "")
@@ -798,6 +929,7 @@ class HookHandler(BaseHTTPRequestHandler):
         prompt_obj = {
             "id": prompt_id, "tool": tool, "hint": hint, "body": body,
             "kind": kind, "option_labels": option_labels, "session_id": sid,
+            "created_at": int(time.time()),
         }
 
         global ACTIVE_PROMPT
@@ -898,20 +1030,28 @@ def pick_transport(kind: str) -> Transport:
 
 
 def main():
-    global BUDGET_LIMIT, TRANSPORT
+    global BUDGET_LIMIT, TRANSPORT, REMOTE_SECRET, REMOTE_TTL_SEC
 
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", help="explicit serial port (implies --transport serial)")
     ap.add_argument("--transport", choices=("auto", "serial", "ble"), default="auto")
+    ap.add_argument("--http-host", default=os.environ.get("BUDDY_HTTP_HOST", "127.0.0.1"),
+                    help="HTTP bind host (default 127.0.0.1; use 0.0.0.0 for LAN)")
     ap.add_argument("--http-port", type=int, default=9876)
     ap.add_argument("--owner", default=os.environ.get("USER", ""))
     ap.add_argument("--budget", type=int, default=200000,
                     help="context-window limit for the budget bar (default 200K = "
                          "Claude 4.6 standard context; set 1000000 for 1M-context "
                          "beta; set 0 to hide the bar)")
+    ap.add_argument("--remote-secret", default=os.environ.get("BUDDY_REMOTE_SECRET", ""),
+                    help="shared secret for remote approval relay HMAC auth")
+    ap.add_argument("--remote-ttl", type=int, default=30,
+                    help="remote approval expiry window in seconds (default 30)")
     args = ap.parse_args()
 
     BUDGET_LIMIT = max(0, args.budget)
+    REMOTE_SECRET = args.remote_secret or ""
+    REMOTE_TTL_SEC = max(5, args.remote_ttl)
 
     if args.port:
         TRANSPORT = SerialTransport(args.port)
@@ -930,8 +1070,12 @@ def main():
     TRANSPORT.start(on_rx_byte, on_connect=_handshake)
     threading.Thread(target=heartbeat_loop, daemon=True).start()
 
-    srv = HTTPServer(("127.0.0.1", args.http_port), HookHandler)
-    log(f"[http] listening on 127.0.0.1:{args.http_port}  budget={BUDGET_LIMIT}")
+    srv = ThreadingHTTPServer((args.http_host, args.http_port), HookHandler)
+    log(f"[http] listening on {args.http_host}:{args.http_port}  budget={BUDGET_LIMIT}")
+    if REMOTE_SECRET:
+        log(f"[remote] relay enabled at /remote/v1/pending + /remote/v1/decision ttl={REMOTE_TTL_SEC}s")
+    else:
+        log("[remote] relay disabled (set BUDDY_REMOTE_SECRET to enable)")
     log("[ready] start a Claude Code session with the hooks installed")
     try:
         srv.serve_forever()

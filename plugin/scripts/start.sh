@@ -6,7 +6,10 @@
 #   BUDDY_TRANSPORT   auto|serial|ble (default: auto)
 #   BUDDY_BUDGET      daily token budget for the Paper (default: 0 = hide)
 #   BUDDY_OWNER       override $USER as the displayed owner name
+#   BUDDY_HTTP_HOST   daemon bind host (default: 127.0.0.1; set 0.0.0.0 for LAN)
 #   BUDDY_HTTP_PORT   HTTP listener port (default: 9876)
+#   BUDDY_REMOTE_SECRET  enable remote approval relay when non-empty
+#   BUDDY_REMOTE_TTL     remote approval expiry seconds (default: 30)
 
 set -euo pipefail
 SELF_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -26,12 +29,17 @@ TRANSPORT="${BUDDY_TRANSPORT:-auto}"
 BUDGET="${BUDDY_BUDGET:-200000}"
 OWNER="${BUDDY_OWNER:-$USER}"
 HTTP_PORT="${BUDDY_HTTP_PORT:-9876}"
+HTTP_HOST="${BUDDY_HTTP_HOST:-127.0.0.1}"
+REMOTE_TTL="${BUDDY_REMOTE_TTL:-30}"
 
 nohup "$PY" "$DAEMON" \
   --transport "$TRANSPORT" \
   --budget "$BUDGET" \
   --owner "$OWNER" \
+  --http-host "$HTTP_HOST" \
   --http-port "$HTTP_PORT" \
+  --remote-secret "${BUDDY_REMOTE_SECRET:-}" \
+  --remote-ttl "$REMOTE_TTL" \
   >> "$LOG_FILE" 2>&1 &
 echo $! > "$PID_FILE"
 

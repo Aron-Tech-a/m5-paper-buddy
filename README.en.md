@@ -137,6 +137,46 @@ are automatic.
 
 ---
 
+## 📡 WiFi remote-approval PoC (phase 1)
+
+Phase 1 only validates the remote approval loop and keeps USB/BLE local
+approval as fallback:
+
+- Existing `Claude hooks -> daemon` flow stays unchanged
+- New daemon relay endpoints:
+  - `GET /remote/v1/pending` for the current FIFO-head request
+  - `POST /remote/v1/decision` for `allow/deny`
+- Local Paper approval still works in parallel
+
+Start example (LAN reachable):
+
+```bash
+BUDDY_HTTP_HOST=0.0.0.0 \
+BUDDY_REMOTE_SECRET='change-this-secret' \
+/buddy-start
+```
+
+Remote calls must include HMAC-SHA256 auth headers (auth + anti-replay):
+
+- `X-Buddy-Device`
+- `X-Buddy-Timestamp`
+- `X-Buddy-Nonce`
+- `X-Buddy-Signature`
+
+Minimal verification client:
+
+```bash
+python3 /home/runner/work/m5-paper-buddy/m5-paper-buddy/tools/remote_approval_client.py \
+  --base-url http://127.0.0.1:9876 \
+  --secret 'change-this-secret' pending
+
+python3 /home/runner/work/m5-paper-buddy/m5-paper-buddy/tools/remote_approval_client.py \
+  --base-url http://127.0.0.1:9876 \
+  --secret 'change-this-secret' decision --decision allow
+```
+
+---
+
 ## 💰 Context budget
 
 The progress bar shows the **currently-focused session's**
