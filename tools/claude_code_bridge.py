@@ -854,7 +854,7 @@ class HookHandler(BaseHTTPRequestHandler):
             if now_ts > active_created + max(1, REMOTE_TTL_SEC):
                 return self._reply(409, {"ok": False, "error": "request expired"})
             holder["decision"] = decision
-        holder["event"].set()
+            holder["event"].set()
         add_transcript(f"remote {decision}")
         BUMP_EVENT.set()
         return self._reply(200, {"ok": True, "request_id": req_id, "decision": decision})
