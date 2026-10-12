@@ -755,7 +755,7 @@ class HookHandler(BaseHTTPRequestHandler):
             return self._reply(404, {"error": "not found"})
         if not ALLOW_LAN_HOOKS:
             peer = self.client_address[0]
-            if peer not in ("127.0.0.1", "::1"):
+            if not is_loopback_host(peer):
                 return self._reply(403, {"error": "hook endpoint is localhost-only"})
 
         try:
