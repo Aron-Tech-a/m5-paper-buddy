@@ -9,6 +9,7 @@ Usage examples:
 
 import argparse
 import json
+import os
 import sys
 import urllib.error
 import urllib.request
@@ -136,6 +137,13 @@ def main() -> int:
     ap.add_argument("--mapping", help="JSON mapping file; see tools/mappings/*.json")
     ap.add_argument("--dry-run", action="store_true", help="print mapped payload only")
     args = ap.parse_args()
+
+    if not args.mapping:
+        here = os.path.dirname(os.path.abspath(__file__))
+        if args.source == "dsh":
+            args.mapping = os.path.join(here, "mappings", "dsh_minimal_mapping.json")
+        elif args.source == "workbuddy":
+            args.mapping = os.path.join(here, "mappings", "workbuddy_minimal_mapping.json")
 
     try:
         incoming = json.load(sys.stdin)

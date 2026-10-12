@@ -941,7 +941,6 @@ class HookHandler(BaseHTTPRequestHandler):
         prompt_id = f"req_{int(time.time() * 1000)}_{os.getpid()}"
         event = threading.Event()
         holder = {"event": event, "decision": None}
-        PENDING[prompt_id] = holder
 
         prompt_obj = {
             "id": prompt_id, "tool": tool, "hint": hint, "body": body,
@@ -952,6 +951,7 @@ class HookHandler(BaseHTTPRequestHandler):
         global ACTIVE_PROMPT
         with STATE_LOCK:
             SESSIONS_WAITING.add(sid)
+            PENDING[prompt_id] = holder
             PENDING_PROMPTS[prompt_id] = prompt_obj
             # FIFO: oldest pending is what's on screen. If nothing active,
             # this new one takes the slot; otherwise it just joins the
@@ -968,8 +968,8 @@ class HookHandler(BaseHTTPRequestHandler):
             if isinstance(decision, str) and decision.startswith("option:"):
                 time.sleep(0.6)
         finally:
-            PENDING.pop(prompt_id, None)
             with STATE_LOCK:
+                PENDING.pop(prompt_id, None)
                 SESSIONS_WAITING.discard(sid)
                 PENDING_PROMPTS.pop(prompt_id, None)
                 if ACTIVE_PROMPT and ACTIVE_PROMPT["id"] == prompt_id:

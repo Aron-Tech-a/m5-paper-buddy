@@ -51,9 +51,11 @@ Upstream hooks/events
 ```bash
 cat /tmp/event.json | python3 tools/upstream_hook_adapter.py \
   --source dsh \
-  --mapping tools/mappings/dsh_minimal_mapping.json \
   --dry-run
 ```
+
+`--source dsh` / `--source workbuddy` 默认会自动加载内置 mapping；
+需要覆盖时再显式传 `--mapping`。
 
 转发到 daemon：
 
