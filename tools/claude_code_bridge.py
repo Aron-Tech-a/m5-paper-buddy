@@ -854,11 +854,15 @@ class HookHandler(BaseHTTPRequestHandler):
         err = None
         holder = None
         with STATE_LOCK:
+            if ACTIVE_PROMPT is None:
+                err = "no active prompt"
             active_id = (ACTIVE_PROMPT or {}).get("id", "")
             active_created = int((ACTIVE_PROMPT or {}).get("created_at", now_ts))
             holder = PENDING.get(req_id)
             is_pending = req_id in PENDING_PROMPTS
-            if not is_pending or holder is None:
+            if err:
+                pass
+            elif not is_pending or holder is None:
                 err = "request no longer pending"
             elif req_id != active_id:
                 err = "request is not active fifo head"
@@ -1064,6 +1068,8 @@ def main():
     REMOTE_SECRET = os.environ.get("BUDDY_REMOTE_SECRET", "")
     REMOTE_TTL_SEC = max(5, args.remote_ttl)
     ALLOW_LAN_HOOKS = os.environ.get("BUDDY_ALLOW_LAN_HOOKS", "").lower() in ("1", "true", "yes")
+    if not is_loopback_host(args.http_host) and ALLOW_LAN_HOOKS and not REMOTE_SECRET:
+        sys.exit("refusing LAN /hook exposure without BUDDY_REMOTE_SECRET")
 
     if args.port:
         TRANSPORT = SerialTransport(args.port)
