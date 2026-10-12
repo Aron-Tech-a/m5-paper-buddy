@@ -91,6 +91,10 @@ def now_hm():
     return datetime.now().strftime("%H:%M")
 
 
+def is_loopback_host(host: str) -> bool:
+    return host in ("127.0.0.1", "::1", "localhost")
+
+
 def add_transcript(line: str):
     with STATE_LOCK:
         TRANSCRIPT.appendleft(f"{now_hm()} {line[:80]}")
@@ -854,7 +858,7 @@ class HookHandler(BaseHTTPRequestHandler):
             active_created = int((ACTIVE_PROMPT or {}).get("created_at", now_ts))
             holder = PENDING.get(req_id)
             is_pending = req_id in PENDING_PROMPTS
-            if not is_pending or not holder:
+            if not is_pending or holder is None:
                 err = "request no longer pending"
             elif req_id != active_id:
                 err = "request is not active fifo head"
@@ -1084,9 +1088,9 @@ def main():
         log(f"[remote] relay enabled at /remote/v1/pending + /remote/v1/decision ttl={REMOTE_TTL_SEC}s")
     else:
         log("[remote] relay disabled (set BUDDY_REMOTE_SECRET to enable)")
-        if args.http_host != "127.0.0.1":
+        if not is_loopback_host(args.http_host):
             log("[remote] WARNING: daemon is LAN-bound but remote relay auth is disabled")
-    if args.http_host != "127.0.0.1" and not ALLOW_LAN_HOOKS:
+    if not is_loopback_host(args.http_host) and not ALLOW_LAN_HOOKS:
         log("[http] hook endpoint still restricted to localhost clients; set BUDDY_ALLOW_LAN_HOOKS=1 to override")
     log("[ready] start a Claude Code session with the hooks installed")
     try:
