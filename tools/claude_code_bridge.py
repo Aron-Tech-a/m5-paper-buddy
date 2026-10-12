@@ -725,7 +725,7 @@ class HookHandler(BaseHTTPRequestHandler):
         with STATE_LOCK:
             p = ACTIVE_PROMPT.copy() if ACTIVE_PROMPT else None
             sid = p.get("session_id", "") if p else ""
-            meta = SESSION_META.get(sid) if sid else None
+            meta = dict(SESSION_META.get(sid) or {}) if sid else {}
         req = None
         if p:
             created = int(p.get("created_at", now_ts))
@@ -734,7 +734,7 @@ class HookHandler(BaseHTTPRequestHandler):
             req = {
                 "request_id": p.get("id", ""),
                 "session_id": sid,
-                "project": (meta or {}).get("project", ""),
+                "project": meta.get("project", ""),
                 "tool": p.get("tool", ""),
                 "hint": p.get("hint", ""),
                 "summary": p.get("body", "")[:240],
@@ -842,19 +842,24 @@ class HookHandler(BaseHTTPRequestHandler):
         decision = "once" if decision_in == "allow" else decision_in
 
         now_ts = int(time.time())
+        err = None
+        holder = None
         with STATE_LOCK:
             active_id = (ACTIVE_PROMPT or {}).get("id", "")
             active_created = int((ACTIVE_PROMPT or {}).get("created_at", now_ts))
             holder = PENDING.get(req_id)
             is_pending = req_id in PENDING_PROMPTS
             if not is_pending or not holder:
-                return self._reply(409, {"ok": False, "error": "request no longer pending"})
-            if req_id != active_id:
-                return self._reply(409, {"ok": False, "error": "request is not active fifo head"})
-            if now_ts > active_created + max(1, REMOTE_TTL_SEC):
-                return self._reply(409, {"ok": False, "error": "request expired"})
-            holder["decision"] = decision
-            holder["event"].set()
+                err = "request no longer pending"
+            elif req_id != active_id:
+                err = "request is not active fifo head"
+            elif now_ts > active_created + max(1, REMOTE_TTL_SEC):
+                err = "request expired"
+            else:
+                holder["decision"] = decision
+                holder["event"].set()
+        if err:
+            return self._reply(409, {"ok": False, "error": err})
         add_transcript(f"remote {decision}")
         BUMP_EVENT.set()
         return self._reply(200, {"ok": True, "request_id": req_id, "decision": decision})
@@ -1073,6 +1078,8 @@ def main():
         log(f"[remote] relay enabled at /remote/v1/pending + /remote/v1/decision ttl={REMOTE_TTL_SEC}s")
     else:
         log("[remote] relay disabled (set BUDDY_REMOTE_SECRET to enable)")
+        if args.http_host != "127.0.0.1":
+            log("[remote] WARNING: daemon is LAN-bound but remote relay auth is disabled")
     log("[ready] start a Claude Code session with the hooks installed")
     try:
         srv.serve_forever()
