@@ -85,7 +85,7 @@ def _build_payload(event: Dict[str, Any], mapping: Dict[str, Any], source: str) 
     raw_event = _first(event, paths["hook_event_name"])
     raw_event = str(raw_event or "")
     hook_event = event_map.get(_norm_event(raw_event), raw_event)
-    if source == "claude":
+    if source == "claude" and not (mapping.get("event_map") or {}):
         hook_event = raw_event or hook_event
 
     payload: Dict[str, Any] = {
