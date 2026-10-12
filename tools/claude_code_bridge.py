@@ -81,6 +81,7 @@ NONCE_WINDOW_SEC    = 300
 # Access under STATE_LOCK only.
 NONCE_SEEN          = {}
 ALLOW_LAN_HOOKS     = False
+ALLOW_INSECURE_LAN  = False
 
 
 def log(*a, **kw):
@@ -856,21 +857,20 @@ class HookHandler(BaseHTTPRequestHandler):
         with STATE_LOCK:
             if ACTIVE_PROMPT is None:
                 err = "no active prompt"
-            active_id = (ACTIVE_PROMPT or {}).get("id", "")
-            active_created = int((ACTIVE_PROMPT or {}).get("created_at", now_ts))
-            holder = PENDING.get(req_id)
-            is_pending = req_id in PENDING_PROMPTS
-            if err:
-                pass
-            elif not is_pending or holder is None:
-                err = "request no longer pending"
-            elif req_id != active_id:
-                err = "request is not active fifo head"
-            elif now_ts > active_created + max(1, REMOTE_TTL_SEC):
-                err = "request expired"
             else:
-                holder["decision"] = decision
-                holder["event"].set()
+                active_id = ACTIVE_PROMPT.get("id", "")
+                active_created = int(ACTIVE_PROMPT.get("created_at", now_ts))
+                holder = PENDING.get(req_id)
+                is_pending = req_id in PENDING_PROMPTS
+                if not is_pending or holder is None:
+                    err = "request no longer pending"
+                elif req_id != active_id:
+                    err = "request is not active fifo head"
+                elif now_ts > active_created + max(1, REMOTE_TTL_SEC):
+                    err = "request expired"
+                else:
+                    holder["decision"] = decision
+                    holder["event"].set()
         if err:
             return self._reply(409, {"ok": False, "error": err})
         add_transcript(f"remote {decision}")
@@ -1047,7 +1047,7 @@ def pick_transport(kind: str) -> Transport:
 
 
 def main():
-    global BUDGET_LIMIT, TRANSPORT, REMOTE_SECRET, REMOTE_TTL_SEC, ALLOW_LAN_HOOKS
+    global BUDGET_LIMIT, TRANSPORT, REMOTE_SECRET, REMOTE_TTL_SEC, ALLOW_LAN_HOOKS, ALLOW_INSECURE_LAN
 
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", help="explicit serial port (implies --transport serial)")
@@ -1068,6 +1068,9 @@ def main():
     REMOTE_SECRET = os.environ.get("BUDDY_REMOTE_SECRET", "")
     REMOTE_TTL_SEC = max(5, args.remote_ttl)
     ALLOW_LAN_HOOKS = os.environ.get("BUDDY_ALLOW_LAN_HOOKS", "").lower() in ("1", "true", "yes")
+    ALLOW_INSECURE_LAN = os.environ.get("BUDDY_ALLOW_INSECURE_LAN", "").lower() in ("1", "true", "yes")
+    if not is_loopback_host(args.http_host) and not REMOTE_SECRET and not ALLOW_INSECURE_LAN:
+        sys.exit("refusing LAN bind without BUDDY_REMOTE_SECRET (set BUDDY_ALLOW_INSECURE_LAN=1 to override)")
     if not is_loopback_host(args.http_host) and ALLOW_LAN_HOOKS and not REMOTE_SECRET:
         sys.exit("refusing LAN /hook exposure without BUDDY_REMOTE_SECRET")
 

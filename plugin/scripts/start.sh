@@ -11,6 +11,7 @@
 #   BUDDY_REMOTE_SECRET  enable remote approval relay when non-empty
 #   BUDDY_REMOTE_TTL     remote approval expiry seconds (default: 30)
 #   BUDDY_ALLOW_LAN_HOOKS  expose /hook to LAN clients (default: off)
+#   BUDDY_ALLOW_INSECURE_LAN  allow LAN bind without remote secret (default: off)
 
 set -euo pipefail
 SELF_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"

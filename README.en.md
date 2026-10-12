@@ -157,6 +157,7 @@ BUDDY_REMOTE_SECRET='change-this-secret' \
 ```
 
 > By default only the remote-approval relay is exposed; `/hook` remains localhost-only. Set `BUDDY_ALLOW_LAN_HOOKS=1` only if you intentionally want LAN clients to call `/hook`, and configure `BUDDY_REMOTE_SECRET`.
+> LAN binding now requires `BUDDY_REMOTE_SECRET` by default; for test-only scenarios you can override with `BUDDY_ALLOW_INSECURE_LAN=1`.
 
 Remote calls must include HMAC-SHA256 auth headers (auth + anti-replay):
 
