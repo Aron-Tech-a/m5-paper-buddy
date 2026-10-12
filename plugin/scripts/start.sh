@@ -38,7 +38,6 @@ nohup "$PY" "$DAEMON" \
   --owner "$OWNER" \
   --http-host "$HTTP_HOST" \
   --http-port "$HTTP_PORT" \
-  --remote-secret "${BUDDY_REMOTE_SECRET:-}" \
   --remote-ttl "$REMOTE_TTL" \
   >> "$LOG_FILE" 2>&1 &
 echo $! > "$PID_FILE"

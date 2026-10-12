@@ -846,15 +846,13 @@ class HookHandler(BaseHTTPRequestHandler):
             active_created = int((ACTIVE_PROMPT or {}).get("created_at", now_ts))
             holder = PENDING.get(req_id)
             is_pending = req_id in PENDING_PROMPTS
-
-        if not is_pending or not holder:
-            return self._reply(409, {"ok": False, "error": "request no longer pending"})
-        if req_id != active_id:
-            return self._reply(409, {"ok": False, "error": "request is not active fifo head"})
-        if now_ts > active_created + max(1, REMOTE_TTL_SEC):
-            return self._reply(409, {"ok": False, "error": "request expired"})
-
-        holder["decision"] = decision
+            if not is_pending or not holder:
+                return self._reply(409, {"ok": False, "error": "request no longer pending"})
+            if req_id != active_id:
+                return self._reply(409, {"ok": False, "error": "request is not active fifo head"})
+            if now_ts > active_created + max(1, REMOTE_TTL_SEC):
+                return self._reply(409, {"ok": False, "error": "request expired"})
+            holder["decision"] = decision
         holder["event"].set()
         add_transcript(f"remote {decision}")
         BUMP_EVENT.set()
@@ -1043,14 +1041,12 @@ def main():
                     help="context-window limit for the budget bar (default 200K = "
                          "Claude 4.6 standard context; set 1000000 for 1M-context "
                          "beta; set 0 to hide the bar)")
-    ap.add_argument("--remote-secret", default=os.environ.get("BUDDY_REMOTE_SECRET", ""),
-                    help="shared secret for remote approval relay HMAC auth")
     ap.add_argument("--remote-ttl", type=int, default=30,
                     help="remote approval expiry window in seconds (default 30)")
     args = ap.parse_args()
 
     BUDGET_LIMIT = max(0, args.budget)
-    REMOTE_SECRET = args.remote_secret or ""
+    REMOTE_SECRET = os.environ.get("BUDDY_REMOTE_SECRET", "")
     REMOTE_TTL_SEC = max(5, args.remote_ttl)
 
     if args.port:
