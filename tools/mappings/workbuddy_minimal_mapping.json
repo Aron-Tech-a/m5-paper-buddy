@@ -1,0 +1,19 @@
+{
+  "event_map": {
+    "PreToolUse": "PreToolUse",
+    "PostToolUse": "PostToolUse",
+    "SessionStart": "SessionStart",
+    "SessionEnd": "Stop",
+    "Stop": "Stop"
+  },
+  "field_paths": {
+    "hook_event_name": ["hook_event_name", "event", "name"],
+    "session_id": ["session_id", "session.id", "sid"],
+    "cwd": ["cwd", "workspace", "meta.cwd"],
+    "tool_name": ["tool_name", "tool.name", "tool"],
+    "tool_input": ["tool_input", "tool.input", "input"],
+    "prompt": ["prompt", "message"],
+    "transcript_path": ["transcript_path", "session.transcript_path"],
+    "permission_mode": ["permission_mode"]
+  }
+}
